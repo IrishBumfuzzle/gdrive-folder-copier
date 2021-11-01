@@ -1,28 +1,25 @@
-from pydrive2.auth import GoogleAuth
+from pydrive2.auth import GoogleAuth, RefreshError
 from pydrive2.drive import GoogleDrive
 import os
 
 gauth = GoogleAuth()
 
-if gauth.credentials is None:
+try:
     gauth.CommandLineAuth()
-
-elif gauth.access_token_expired:
-    try:
-        gauth.Refresh()
-    except:
-        current_directory = os.path.dirname(os.path.abspath(__file__))
-        os.remove(current_directory + "\creds.json")
-        gauth.CommandLineAuth()
-
-else:
-    gauth.Authorize()
+except RefreshError:
+    current_directory = os.path.dirname(os.path.abspath(__file__))
+    os.remove(current_directory + "\creds.json")
+    print("Automatic token refreshal failed, please give your authentication code again by visiting this link \n\n" + gauth.GetAuthUrl())
+    code = input("\n\nYour authentication code: ")
+    gauth.Auth(code)
+    gauth.SaveCredentialsFile("creds.json")
 
 drive = GoogleDrive(gauth)
 
 source_id = input("Folder to copy from: ")
 parent_id = input("Folder to copy to: ")
 prefix = input("Prefix to put if any: ")
+copy_parent_folder = None #set this to True if you want to copy the source folder into the destination folder
 
 def copy_file(service, source_id, parent_folder_id, prefix_for_files):
     source = drive.CreateFile({'id': source_id})
@@ -56,5 +53,20 @@ def copy_from_folder(folder_id, parent_folder_id, prefix_for_files):
             copy_from_folder(original_folder, copied_folder, prefix_for_files)
         else:
             copy_file(drive.auth.service, file1['id'], parent_folder_id, prefix_for_files)
+
+def create_parent_folder(id, source_folder_id, prefix_for_folder):
+    folder_source = drive.CreateFile({'id': source_folder_id})
+    folder_source.FetchMetadata('title')
+    print('title: %s, id: %s' % (folder_source['title'], folder_source['id']))
+    
+    dest_title = prefix_for_folder + folder_source['title']
+    copied_folder = drive.CreateFile({'mimeType': 'application/vnd.google-apps.folder', 'title': dest_title, 'parents': [{'id': id}]})
+    copied_folder.Upload()
+    return copied_folder['id']
+
+
+if copy_parent_folder:
+    parent_id = create_parent_folder(parent_id, source_id, prefix)
+    
 
 copy_from_folder(source_id, parent_id, prefix)
